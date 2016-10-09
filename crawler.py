@@ -8,8 +8,10 @@ depends on how large the site is.
 __author__ = "BWBellairs"
 __version__ = "0.1.0"
 
-import requests
+# Modules / Packages required are listed below
+import validators
 import threading
+import requests
 import time
 import re
 
@@ -21,7 +23,9 @@ class web_crawler(object):
         start from
         """
         self.home = home
-
+        self.domain = ".".join(home.split("/")[2].split(".")[0:3]) if self.home.count("/") > 2 else home.split("/")[2]
+        self.tld = self.domain.split(".")[1]
+        
         # Task list allowing crawlers to communicate
         # We're adding self.home here as the point of origin
         self.tasks = [
@@ -40,6 +44,9 @@ class web_crawler(object):
         # A dictionary containing all the crawler threads
         self.crawlers = []
 
+        # List to keep all links found and not cause any crawlers to go over the same link
+        self.allLinks = []
+
     def run(self):
         self.threadsRun = True
         
@@ -51,34 +58,38 @@ class web_crawler(object):
             )
             
             # We don't need daemon threads
-            self.crawlers[index].setDaemon = True
+            self.crawlers[index].setDaemon(False)
 
             # Starting the crawler thread
             self.crawlers[index].start()
 
-            # List to keep all links found and not cause any crawlers to go over the same link
-            self.allLinks = []
+        tasksOld = len(self.tasks)
+        while True:
+
+            time.sleep(5)
+
+            tasksNew = len(self.tasks)
+
+            if tasksNew == tasksOld:
+                self.threadsRun = False
 
             tasksOld = len(self.tasks)
-            while True:
 
-                time.sleep(10)
-
-                tasksNew = len(self.tasks)
-
-                if tasksNew == tasksOld:
-                    self.threadsRun = False
-
-                tasksOld = len(self.tasks)
+            raise SystemExit
                             
 
     def cprint(self, name, message):
         """
         This is needed as crazy formatting is produced when individual threads print to console
-        on their own
+        on their own # Doesn't work
         """
-        print(name + " " + message)
-        #pass
+        #print(name + " " + message)
+        pass
+
+    def isWebsite(self, website):
+        if validators.url(website):
+            return True
+    
     def crawler(self, name):
         """
         Individual crawlers can
@@ -94,28 +105,28 @@ class web_crawler(object):
         while True:
             if not self.tasks[index]["assigned"]:
                 self.tasks[index]["assigned"] = True
+
                 currentTask = self.tasks[index]
+                page = currentTask["page"]
 
-                self.cprint(name, "Unassigned link found, assigning link ({0})".format(currentTask["page"]))
+                self.cprint(name, "Unassigned link found, assigning link ({0})".format(page))
 
-                if currentTask["page"].startswith("/") or not currentTask["page"].startswith("http"):
-                    if currentTask["page"].startswith("/"):
-                        currentTask["page"] = self.home + currentTask["page"]
-
+                if not self.isWebsite(page):
+                    if page.startswith("/"):
+                        page = self.home + page[1:] if self.home.endswith("/") else self.home + page
+                        
                     else:
-                        currentTask["page"] = self.home + "/" + currentTask["page"]
+                        page = self.home + "/" + page
 
-                if currentTask["page"] in self.allLinks:
-                    self.cprint(name, "Link has already been searched ({0})".format(currentTask["page"]))
+                if page in self.allLinks:
+                    self.cprint(name, "Link has already been searched ({0})".format(page))
                     indexDone = index
 
-                elif not currentTask["page"].startswith(self.home) and self.blockExternalLinks:
-                    self.cprint(name, "Link is external ({0})".format(currentTask["page"]))
+                elif not page.startswith(self.home) and self.blockExternalLinks:
+                    self.cprint(name, "Link is external ({0})".format(page))
                     indexDone = index
 
                 else:
-                    page = currentTask["page"]
-
                     self.cprint(name, "Searching page: {0}".format(page))
 
                     pageSource = requests.get(page).text
@@ -142,9 +153,7 @@ class web_crawler(object):
 
                     indexDone = index
 
-                    with open("links.txt", "a+") as linkFile:
-                        linkFile.write(page + "\n")
-                        linkFile.close()
+                    print(page)
 
                     self.cprint(name, "Finished searching page: {0}".format(page))
             
@@ -165,5 +174,5 @@ class web_crawler(object):
             #print(str(self.tasks))
 
 # Example
-main = web_crawler("https://deepseadev.xyz", True, 5)
+main = web_crawler("https://google.com", True, 15)
 main.run()
