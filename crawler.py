@@ -6,14 +6,15 @@ depends on how large the site is.
 """
 
 __author__ = "BWBellairs"
-__version__ = "0.1.0"
+__version__ = "0.1.6"
 
 # Modules / Packages required are listed below
-import validators
 import threading
-import requests
+import urllib
 import time
-import re
+import bs4
+
+ignoredTags = ["meta", "img", "video", "audio", "script", "style"]
 
 class web_crawler(object):
     def __init__(self, home, blockExternal=True, crawlerAmount=1):
@@ -23,7 +24,7 @@ class web_crawler(object):
         start from
         """
         self.home = home
-        self.domain = ".".join(home.split("/")[2].split(".")[0:3]) if self.home.count("/") > 2 else home.split("/")[2]
+        self.domain = home.split(":")[1].strip("/")
         self.tld = self.domain.split(".")[1]
         
         # Task list allowing crawlers to communicate
@@ -66,29 +67,18 @@ class web_crawler(object):
         tasksOld = len(self.tasks)
         while True:
 
-            time.sleep(5)
+            time.sleep(10)
 
             tasksNew = len(self.tasks)
 
             if tasksNew == tasksOld:
-                self.threadsRun = False
+                self.threadsRun = False # Stop threads one tasks have stopped coming in. Site has finished being crawled.
+                #raise SystemExit # Allow the program to exit
 
             tasksOld = len(self.tasks)
 
-            raise SystemExit
-                            
-
-    def cprint(self, name, message):
-        """
-        This is needed as crazy formatting is produced when individual threads print to console
-        on their own # Doesn't work
-        """
-        #print(name + " " + message)
-        pass
-
-    def isWebsite(self, website):
-        if validators.url(website):
-            return True
+            # TODO: Check that all threads have stopped before exiting. thread.isAlive()
+            # TODO: Fix relative threads. some hrefs="/blah" which needs to be appended onto self.home
     
     def crawler(self, name):
         """
@@ -96,51 +86,43 @@ class web_crawler(object):
         crawl a website more efficiently
         in a smaller amount of time
         """
-        name = "[Crawler-{0}]".format(name)
-
-        self.cprint(name, "Started") # Showing this crawler has started
+        name = "[Crawler-{0}]".format(name) # This crawler's name
 
         index = 0 # I'm not using a for loop as they are limited to a range
         indexDone = -1 # This is used to keep track of which index this crawler has finished with
         while True:
             if not self.tasks[index]["assigned"]:
-                self.tasks[index]["assigned"] = True
+                self.tasks[index]["assigned"] = True # Assign the task to let the other threads know we're handling this one.
 
-                currentTask = self.tasks[index]
-                page = currentTask["page"]
+                currentTask = self.tasks[index] # Easier to reference this dictionary
+                page = currentTask["page"] # Easier to use this shorter variable name. Trust me.
 
-                self.cprint(name, "Unassigned link found, assigning link ({0})".format(page))
+                print(page)
 
-                if not self.isWebsite(page):
-                    if page.startswith("/"):
-                        page = self.home + page[1:] if self.home.endswith("/") else self.home + page
-                        
-                    else:
-                        page = self.home + "/" + page
+                if page in self.allLinks: # Don't want to search the same website
+                    indexDone = index # Don't crawl a lage that's already been crawled
 
-                if page in self.allLinks:
-                    self.cprint(name, "Link has already been searched ({0})".format(page))
-                    indexDone = index
-
-                elif not page.startswith(self.home) and self.blockExternalLinks:
-                    self.cprint(name, "Link is external ({0})".format(page))
-                    indexDone = index
+                elif not page.startswith(self.home) and self.blockExternalLinks: # Avoid External Links
+                    indexDone = index # Continue with the next task as we don't want to crawl this link
 
                 else:
-                    self.cprint(name, "Searching page: {0}".format(page))
+                    pageSource = urllib.urlopen(page) # Get the page's content
 
-                    pageSource = requests.get(page).text
+                    soup = bs4.BeautifulSoup(pageSource, "html.parser") # Parse the page as html
 
-                    links = re.findall(r'href=[\'"]?([^\'" >]+)', pageSource)
+                    tags = soup.find_all(href=True) # Finds all tags and put them into a list
+                    tags = [tag for tag in tags if tag.name not in ignoredTags]
+
+                    links = [tag["href"] for tag in tags]
 
                     # Adding links to self.tasks for crawling and to the current page for reference
                     self.tasks[index]["links"] = links
 
-                    appendedLinks = []
+                    appendedLinks = [] # This list is used to avoid duplicate linkss found on a page
 
-                    for link in links:
-                        if not link in self.allLinks and link != page and link not in appendedLinks:
-                            self.tasks.append(
+                    for link in links: # Iterating over the list of links found on the current page
+                        if not link in self.allLinks and link != page and link not in appendedLinks: # Make sure no duplicate links are appended
+                            self.tasks.append( # Appending the page to self.tasks so another thread can handle it
                                 {
                                 "page": link,
                                 "assigned": False,
@@ -149,30 +131,19 @@ class web_crawler(object):
 
                             appendedLinks.append(link)
 
-                    self.allLinks.append(currentTask["page"])
+                    self.allLinks.append(page) # Keep track of all pages browsed
 
-                    indexDone = index
-
-                    print(page)
-
-                    self.cprint(name, "Finished searching page: {0}".format(page))
+                    indexDone = index # We've done crawling this page
             
-            if not self.threadsRun:
-                self.cprint(name, "Stopping - Finished Crawling")
-
+            if not self.threadsRun: # Stop this thread one this variable is True
+                print("Ended")
                 return
 
             elif len(self.tasks) > (index + 1) and index == indexDone:
                 index += 1 # Look at the next task if it is available
 
-                self.cprint(name, "Switching to [Task {0}]".format(index + 1)) # Real Index is used
-
                 continue # Go to start of loop
-                
-            self.cprint(name, "Waiting for new task")
-
-            #print(str(self.tasks))
 
 # Example
-main = web_crawler("https://google.com", True, 15)
+main = web_crawler("https://google.co.uk", True, 2)
 main.run()
