@@ -73,7 +73,19 @@ class web_crawler(object):
 
             if tasksNew == tasksOld:
                 self.threadsRun = False # Stop threads one tasks have stopped coming in. Site has finished being crawled.
-                #raise SystemExit # Allow the program to exit
+
+                dead = 0
+                index = 0
+                while True:
+                    if not self.crawlers[index].isAlive():
+                        dead += 1
+
+                        if len(self.crawlers) > (index + 1):
+                            index += 1
+
+                    if dead == len(self.crawlers):
+                        print("All Threads Killed - Crawler Stopped")
+                        raise SystemExit # Allow the program to exit
 
             tasksOld = len(self.tasks)
 
